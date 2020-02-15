@@ -24,6 +24,8 @@ use App\SubmittedApplications;
 use App\Settings;
 use App\Ratings;
 use App\Comments;
+use Illuminate\Support\Facades\Input;
+use Illuminate\Http\Request;
 
 use Illuminate\Support\Facades\DB;
 //use Validator;
@@ -705,9 +707,9 @@ Route::get('getyear',['middleware'=>'cors',function(){
 Route::get('getproducts',['middleware'=>'cors',function(){
   date_default_timezone_set("Asia/Singapore");
 
-  $vehicle = isset($_GET['vehicle']) ? $_GET['vehicle'] : "";
-  $model   = isset($_GET['model']) ? $_GET['model'] : "";
-  $yr      = isset($_GET['year']) ? $_GET['year'] : "";
+  $vehicle = isset($_GET['vehicle']) ? str_replace(' ', '', $_GET['vehicle']) : "";
+  $model   = isset($_GET['model']) ? str_replace(' ', '', $_GET['model']) : "";
+  $yr      = isset($_GET['year']) ? str_replace(' ', '', $_GET['year']) : "";
   $result  = "";
 
   if(!empty($vehicle) and !empty($model) and !empty($yr)){
@@ -935,7 +937,9 @@ Route::get('products/', 'ProductsController@index');
 Route::get('getprovincials',['middleware'=>'cors',function(){
   date_default_timezone_set("Asia/Singapore");
 
-  $province = \App\Province::select('id','province')->orderBy('province','ASC')->get();
+  $province = \App\Province::select('id','province')
+  ->orderBy('province','asc')
+  ->get();
   return $province;
 }]);
 
@@ -943,7 +947,10 @@ Route::get('getmunicipalities',['middleware'=>'cors',function(){
   date_default_timezone_set("Asia/Singapore");
 
   $province_id = isset($_GET['id']) ? $_GET['id'] : "";
-  $municipalities = \App\Municipalities::select('id','municipality_city')->where('province_id','=',$province_id)->get();
+  $municipalities = \App\Municipalities::select('id','municipality_city')
+  ->where('province_id','=',$province_id)
+  ->orderBy('municipality_city', 'asc')
+  ->get();
   return $municipalities;
 }]);
 
@@ -5138,13 +5145,25 @@ Route::get('bikesmotorcycles',['middleware'=>'cors',function(){
 
 Route::post('submitapplication',['middleware'=>'cors',function(Request $request){
   date_default_timezone_set("Asia/Singapore");
+  $destinationPath = public_path('../../images/submitted-applications/');
   if(!empty(request('profile-image'))){
     $profimage = request('profile-image');
     $fileext2 = $profimage->getClientOriginalExtension();
-    $proimg = "motors-".str_replace(" ","",request('first-name')).str_replace(" ","",request('last-name')).date("Ymdhis").'.'.$fileext2;
-    $destinationPath = public_path('../../images/submitted-applications/');
+    $proimg = "motors-image-".str_replace(" ","",request('first-name')).str_replace(" ","",request('last-name')).date("Ymdhis").'.'.$fileext2;
     $profimage->move($destinationPath, $proimg);
   }
+
+
+  if(Input::hasFile('valid_id')){
+    $images1=array();
+    $files1 = $request->file('valid_id');
+      foreach($files1 as $file){
+          $name1 = "motors-id-".str_replace(" ","",request('first-name')).str_replace(" ","",request('last-name')).date("Ymdhis").'.'.$file->getClientOriginalName();
+          $images1[]=$name1;
+          $file->move($destinationPath,$name1);
+      }
+  }
+
   $prod_arr = array('status'=>'error','message'=>'Unable to submit application.');
         $sa = new SubmittedApplications;
         $sa->first_name = request('first-name');
@@ -5195,8 +5214,11 @@ Route::post('submitapplication',['middleware'=>'cors',function(Request $request)
 
 
         if(!empty(request('profile-image'))){
-        $sa->uploaded_picture = $proimg;
+          $sa->uploaded_picture = $proimg;
         }
+
+        $sa->valid_id = implode(",", $images1);
+
         $sa->save();
     if(!empty($sa->id)){
 
@@ -5350,8 +5372,11 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
           //if province is the only available filter
 
             $sql = 'SELECT
+                    t_stores.vendor_code_main,
                     t_store_products.id,
                     t_store_products.store_id,
+                    t_store_products.frame,
+                    t_store_products.profile_image,
                     t_store_products.status,
                     t_store_products.price,
                     t_store_products.stock_allocation,
@@ -5378,12 +5403,16 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
                     INNER JOIN t_store_products ON t_store_products.store_id=t_stores.id
                     INNER JOIN t_submitted_products ON t_submitted_products.id=t_store_products.product_id
                     WHERE t_stores.province_id='.request('province').'
+                    OR t_stores.vendor_code_main = "RPL"
                     AND t_store_products.status=1'. $limit;
         }
         elseif(!empty(request('province')) and !empty(request('municipality'))){
           $sql = 'SELECT
+                  t_stores.vendor_code_main,
                   t_store_products.id,
                   t_store_products.store_id,
+                  t_store_products.frame,
+                  t_store_products.profile_image,
                   t_store_products.status,
                   t_store_products.price,
                   t_store_products.stock_allocation,
@@ -5411,6 +5440,7 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
                   INNER JOIN t_submitted_products ON t_submitted_products.id=t_store_products.product_id
                   WHERE t_stores.province_id='.request('province').'
                   AND t_stores.municipality_id='.request('municipality').'
+                  OR t_stores.vendor_code_main = "RPL"
                   AND t_store_products.status=1'.$limit;
         }
 
@@ -5424,6 +5454,9 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
         foreach($prod_arr as $pa){
           $pa_arr[$aa]['id'] = taiga_crypt($pa->id,'e');
           $pa_arr[$aa]['store_id'] = $pa->store_id;
+          $pa_arr[$aa]['frame'] = $pa->frame;
+          $pa_arr[$aa]['profile_image'] = $pa->profile_image;
+          $pa_arr[$aa]['vendor_code_main'] = $pa->vendor_code_main;
           $pa_arr[$aa]['status'] = $pa->status;
           $pa_arr[$aa]['price'] = $pa->price;
           $pa_arr[$aa]['stock_allocation'] = $pa->stock_allocation;
@@ -5463,8 +5496,11 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
         //$sql = 'SELECT id as product_id FROM t_products WHERE tags like "%'.$search.'%" AND type=1 AND status<>0';
 
         $sql = 'SELECT
+                t_stores.vendor_code_main,
                 t_store_products.id,
                 t_store_products.store_id,
+                t_store_products.frame,
+                t_store_products.profile_image,
                 t_store_products.status,
                 t_store_products.price,
                 t_store_products.stock_allocation,
@@ -5491,6 +5527,7 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
                 INNER JOIN t_store_products ON t_store_products.store_id=t_stores.id
                 INNER JOIN t_submitted_products ON t_submitted_products.id=t_store_products.product_id
                 WHERE t_submitted_products.tags like "%'.$search.'%"
+                AND t_stores.vendor_code_main = "RPL"
                 AND t_store_products.status=1'.$limit;
 
         $add_cond = '';
@@ -5515,6 +5552,9 @@ Route::get('filtermotorproducts',['middleware'=>'cors',function(Request $request
         foreach($prod_arr as $pa){
           $pa_arr[$aa]['id'] = taiga_crypt($pa->id,'e');
           $pa_arr[$aa]['store_id'] = $pa->store_id;
+          $pa_arr[$aa]['frame'] = $pa->frame;
+          $pa_arr[$aa]['profile_image'] = $pa->profile_image;
+          $pa_arr[$aa]['vendor_code_main'] = $pa->vendor_code_main;
           $pa_arr[$aa]['status'] = $pa->status;
           $pa_arr[$aa]['price'] = $pa->price;
           $pa_arr[$aa]['stock_allocation'] = $pa->stock_allocation;
@@ -5573,8 +5613,11 @@ function motordefaultlist($limit){
   //query to fetch all needed infos
   //should add to condition product stocks
   $sql = 'SELECT
+          t_stores.vendor_code_main,
           t_store_products.id,
           t_store_products.store_id,
+          t_store_products.frame,
+          t_store_products.profile_image,
           t_store_products.status,
           t_store_products.price,
           t_store_products.stock_allocation,
@@ -5606,6 +5649,9 @@ function motordefaultlist($limit){
   foreach($prod_arr as $pa){
     $pa_arr[$aa]['id'] = taiga_crypt($pa->id,'e');
     $pa_arr[$aa]['store_id'] = $pa->store_id;
+    $pa_arr[$aa]['frame'] = $pa->frame;
+    $pa_arr[$aa]['profile_image'] = $pa->profile_image;
+    $pa_arr[$aa]['vendor_code_main'] = $pa->vendor_code_main;
     $pa_arr[$aa]['status'] = $pa->status;
     $pa_arr[$aa]['price'] = $pa->price;
     $pa_arr[$aa]['stock_allocation'] = $pa->stock_allocation;
